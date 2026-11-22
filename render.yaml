@@ -1,18 +1,21 @@
 services:
   - type: web
-    name: freemodel-studio
+    name: nebula-ai
     runtime: docker
     plan: free
+    healthCheckPath: /api/health
     envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: FM_BASE_URL
+        value: https://freemodel.in/v1
       - key: FM_API_KEY
         sync: false
       - key: FM_API_KEY_2
         sync: false
-      - key: FM_API_KEY_3
+      - key: FIREBASE_DB_URL
         sync: false
-      - key: FM_BASE_URL
-        value: https://freemodel.in/v1
-      - key: APP_PASSWORD
-        sync: false
-      - key: BOT_TOKEN
+      - key: FIREBASE_SECRET
         sync: false

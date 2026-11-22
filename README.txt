@@ -1,83 +1,28 @@
-NEBULA AI — Intelligent Chat + Coding Workspace + Arena AI
-========================================================
+NEBULA AI v2 — Website + Telegram bot (ek hi Render service, sirf Node, Python nahi)
 
-FEATURES
-- Reference-inspired Nebula interface with a dark glass workspace, compact scrollable model picker, model badges, and mobile-friendly composer.
-- Chat, image and video generation modes (provider models must support them).
-- Build Project mode: asks the selected model for a complete JSON file manifest, previews the generated file tree and file contents, and packs the files into a downloadable ZIP in the browser.
-- Arena AI: sends the same prompt to two selected chat models in parallel and lets you choose the preferred answer.
-- Visible activity/status timeline while requests are running. These are task progress indicators, not a display of private model chain-of-thought.
-- Upload text/code files, images and ZIP archives as context.
-- API keys remain on the Render server.
-- Automatic API key fallback across FM_API_KEY and numbered backup variables up to slot 100.
+GITHUB: is zip ke ANDAR ki files repo ke root me daalo (Dockerfile, server.js, bot.js, auth.js, public/ ...). Folder ke andar folder nahi.
 
-DEPLOY TO RENDER
-1. Upload the complete freemodel-studio folder to your GitHub repository.
-2. In Render create/update a Web Service and select Docker runtime.
-3. Add environment variables in Render:
-   FM_BASE_URL = https://freemodel.in/v1
-   FM_API_KEY = your primary key
-   FM_API_KEY_2 = your backup key
-   FM_API_KEY_3 = another backup key (optional)
-   APP_PASSWORD = choose a private app password (recommended)
-4. Add more backups as FM_API_KEY_4, FM_API_KEY_5, ... up to FM_API_KEY_100.
-5. Save changes and deploy/redeploy.
+RENDER ENVIRONMENT:
+  BOT_TOKEN        = BotFather token
+  ADMIN_ID         = admin ka Telegram numeric user id (multiple: 123,456)   [@userinfobot se milega]
+  FM_API_KEY       = provider key (backup: FM_API_KEY_2, _3 ...)
+  FM_BASE_URL      = https://freemodel.in/v1
+  FIREBASE_DB_URL  = https://xxxx-default-rtdb.firebaseio.com   (recommended: passwords restart pe delete na ho)
+  FIREBASE_SECRET  = Firebase database secret (optional, agar rules locked hain)
+APP_PASSWORD ab nahi chahiye — delete kar do.
 
-API KEY FALLBACK
-- The server reads FM_API_KEY, then FM_API_KEY_2, FM_API_KEY_3, etc. It also accepts FM_API_KEY2 as an alias for slot 2 and similarly numbered aliases.
-- When an upstream request returns an authentication, quota, rate-limit, timeout or retryable server error, the server retries the same request with the next configured key.
-- Ordinary request errors such as invalid model/prompt (400/404/422) are not retried with other keys.
-- Fallback uses the same FM_BASE_URL. It cannot repair an expired account, unsupported model, provider outage, or incompatible API format.
+ADMIN COMMANDS (sirf ADMIN_ID wale ko):
+  /newpass naam   -> naya password banata hai
+  /passes         -> list (kis IP / Telegram se lock hai)
+  /revoke ID      -> password delete + uske saare login band
+  /resetip ID     -> lock reset (user ka IP badal gaya ho to)
 
-SECURITY
-- Never put API keys in index.html or commit them to public GitHub.
-- Set APP_PASSWORD to prevent other people from using your hosted API balance.
-- If a key was exposed, revoke/rotate it at the provider.
-- Uploaded files and generated chat history are handled in the browser; do not upload secrets or sensitive files unless you trust the hosting setup.
+LOGIN RULES:
+  - Website: password pehli baar jis IP se use hua, usi IP pe lock. Doosre IP se wahi password reject.
+  - Login ek baar, phir session browser me save — logout nahi hota (IP badalne pe bhi).
+  - Telegram bot: password pehle Telegram account pe lock (Telegram IP nahi deta). Ek baar login = hamesha login.
+  - Strict mode (optional): STRICT_SESSION_IP=1 -> session bhi IP badalne pe band.
 
-NOTES / LIMITATIONS
-- Build Project mode depends on the selected model following the requested JSON file-manifest format. Very large projects may hit provider output-token limits; ask for a smaller project or generate it in modules.
-- Generated ZIPs are assembled in the browser with JSZip (CDN required).
-- Model progress labels show the app's current task stage. They do not expose hidden reasoning or guarantee that a provider is internally using a particular thinking mode.
-- Image/video features depend on the upstream provider endpoints and model availability.
-
-ENDPOINTS
-GET /api/health  - server health
-GET /api/info    - configured API key count only; never returns key values
-
-MOBILE / PROJECT UX PATCH
-- Mobile layout uses dynamic viewport height, safe-area padding, independent chat scrolling and a fixed-height composer region.
-- Sidebar is an off-canvas drawer on phones; file preview and file tree stay within the screen.
-- Welcome orb now has rotating luminous rings, glow and floating animation (respects reduced-motion preference).
-- Explicit software/project creation requests from Chat mode are routed to Build Project mode so generated code is returned as separate files and a ZIP preview rather than one giant chat code block.
-- Progress indicators now advance at actual application milestones instead of an automatic timer.
-
-TELEGRAM BOT (SAME RENDER SERVICE)
-=================================
-- A single extra source file, bot.py, runs the Telegram bot using Python standard library only.
-- Dockerfile installs python3. The existing Node server starts bot.py automatically when BOT_TOKEN is configured.
-- Add BOT_TOKEN in Render Environment (Telegram @BotFather token). Keep it secret; never put it in GitHub or frontend code.
-- The bot reads the same FM_BASE_URL, FM_API_KEY, FM_API_KEY_2 ... FM_API_KEY_100 and uses the same key fallback sequence.
-- Telegram commands: /start, /models, /new, /help.
-- /models fetches the provider's /models endpoint and shows a paginated inline model picker. Selected model is remembered per Telegram chat in process memory.
-- Single-file answers are sent as chat text/code. Multi-file JSON manifests are written into a ZIP and sent as a Telegram document.
-- The bot sends visible progress/status messages and Telegram typing actions. It does not expose private model chain-of-thought.
-- No separate Render service is required. The website and bot run in the same Render web service/container.
-- Note: Render restarts clear bot conversation state; use /new when needed. Provider must support OpenAI-compatible /models and /chat/completions endpoints.
-
-BOT REPAIR NOTES
-- On startup, bot deletes any old Telegram webhook (preserving pending updates), calls getMe to verify BOT_TOKEN, and logs the bot username.
-- Model buttons use short callback tokens mapped to full model IDs, avoiding Telegram callback_data truncation.
-- Model-list parser accepts common data/models/results array response shapes.
-- AI requests run in background threads so one long generation does not block polling for other chats.
-- Added /status to report bot state, configured key count, API base URL, and selected model.
-- Check Render Logs for: "Telegram authenticated as @..." to confirm the bot process is alive.
-
-
-TELEGRAM BOT REPAIR NOTES (2026-11-22)
-- Fixed missing MODEL_ID_MAP initialization used by inline model selection callbacks.
-- Expanded /models parsing for common provider response shapes and kept valid chat/text model IDs.
-- Added clearer user-visible model loading errors and server-side traceback logs.
-- Added /command@BotUsername compatibility.
-- Python runs unbuffered under the Node supervisor so Render logs show bot startup and polling output immediately.
-- On Render, confirm Docker runtime is active, BOT_TOKEN and at least one FM_API_KEY are present, and deploy exactly one service instance to avoid Telegram getUpdates conflicts.
+FREE RENDER: 15 min inactivity pe sleep hota hai, tab bot band ho jata hai.
+  uptimerobot.com pe https://<tumhara-url>/api/health ko 5 min me ping karao.
+CHECK: https://<url>/bot-status  aur Render Logs me "Telegram authenticated as @..."
