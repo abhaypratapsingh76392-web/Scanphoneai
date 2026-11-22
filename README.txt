@@ -64,3 +64,20 @@ TELEGRAM BOT (SAME RENDER SERVICE)
 - The bot sends visible progress/status messages and Telegram typing actions. It does not expose private model chain-of-thought.
 - No separate Render service is required. The website and bot run in the same Render web service/container.
 - Note: Render restarts clear bot conversation state; use /new when needed. Provider must support OpenAI-compatible /models and /chat/completions endpoints.
+
+BOT REPAIR NOTES
+- On startup, bot deletes any old Telegram webhook (preserving pending updates), calls getMe to verify BOT_TOKEN, and logs the bot username.
+- Model buttons use short callback tokens mapped to full model IDs, avoiding Telegram callback_data truncation.
+- Model-list parser accepts common data/models/results array response shapes.
+- AI requests run in background threads so one long generation does not block polling for other chats.
+- Added /status to report bot state, configured key count, API base URL, and selected model.
+- Check Render Logs for: "Telegram authenticated as @..." to confirm the bot process is alive.
+
+
+TELEGRAM BOT REPAIR NOTES (2026-11-22)
+- Fixed missing MODEL_ID_MAP initialization used by inline model selection callbacks.
+- Expanded /models parsing for common provider response shapes and kept valid chat/text model IDs.
+- Added clearer user-visible model loading errors and server-side traceback logs.
+- Added /command@BotUsername compatibility.
+- Python runs unbuffered under the Node supervisor so Render logs show bot startup and polling output immediately.
+- On Render, confirm Docker runtime is active, BOT_TOKEN and at least one FM_API_KEY are present, and deploy exactly one service instance to avoid Telegram getUpdates conflicts.

@@ -133,7 +133,7 @@ function startTelegramBot() {
     return;
   }
   const py = process.env.PYTHON_BIN || 'python3';
-  const child = spawn(py, [path.join(__dirname, 'bot.py')], {
+  const child = spawn(py, ['-u', path.join(__dirname, 'bot.py')], {
     cwd: __dirname, env: process.env, stdio: ['ignore', 'inherit', 'inherit']
   });
   child.on('error', err => console.error('Telegram bot failed to start:', err.message));
@@ -145,5 +145,6 @@ function startTelegramBot() {
 
 app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
   console.log('Nebula AI website running');
+  console.log('Telegram bot token configured:', Boolean(process.env.BOT_TOKEN && process.env.BOT_TOKEN.trim()));
   startTelegramBot();
 });

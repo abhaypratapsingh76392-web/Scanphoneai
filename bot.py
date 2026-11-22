@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Nebula AI Telegram bot. Standard-library only; shares Render FM API keys."""
-import os, json, time, urllib.request, urllib.error, urllib.parse, threading, zipfile, io, re, html, logging
+import os, json, time, urllib.request, urllib.error, urllib.parse, threading, zipfile, io, re, html, logging, hashlib
 
 logging.basicConfig(level=os.getenv("BOT_LOG_LEVEL","INFO"), format="%(asctime)s %(levelname)s %(message)s")
 log=logging.getLogger("nebula-bot")
@@ -10,6 +10,7 @@ APP_PASSWORD=os.getenv("APP_PASSWORD","")
 TG="https://api.telegram.org/bot"+TOKEN
 USER_STATE={}
 MODEL_CACHE={"at":0,"items":[]}
+MODEL_ID_MAP={}
 MODEL_PAGE_SIZE=12
 MAX_TELEGRAM=3900
 
@@ -78,17 +79,42 @@ def answer_cb(cid,text=""):
     except Exception: pass
 
 def get_models(force=False):
-    if not force and MODEL_CACHE["items"] and time.time()-MODEL_CACHE["at"]<300: return MODEL_CACHE["items"]
+    if not force and MODEL_CACHE["items"] and time.time()-MODEL_CACHE["at"]<300:
+        return MODEL_CACHE["items"]
     data=provider("/models")
-    items=data.get("data",[]) if isinstance(data,dict) else []
+    if isinstance(data, list):
+        items=data
+    elif isinstance(data, dict):
+        items=data.get("data") or data.get("models") or data.get("results") or []
+        # Some gateways wrap the standard list one level deeper.
+        if isinstance(items, dict):
+            items=items.get("data") or items.get("models") or []
+    else:
+        items=[]
     result=[]
-    for m in items:
-        if not isinstance(m,dict) or not m.get("id"): continue
-        typ=m.get("type")
-        if typ and typ!="chat": continue
-        result.append({"id":str(m["id"]),"name":str(m.get("name") or m["id"])})
-    MODEL_CACHE.update(at=time.time(),items=result)
-    return result
+    for m in items if isinstance(items,list) else []:
+        if isinstance(m,str):
+            result.append({"id":m,"name":m})
+            continue
+        if not isinstance(m,dict):
+            continue
+        mid=m.get("id") or m.get("model") or m.get("slug")
+        if not mid:
+            continue
+        typ=str(m.get("type") or m.get("capability") or "").lower()
+        # Keep chat/text and unspecified models; skip clearly non-chat endpoints.
+        if any(x in typ for x in ("image-generation","text-to-image","text-to-video","embedding","speech","audio")):
+            continue
+        result.append({"id":str(mid),"name":str(m.get("name") or m.get("display_name") or mid)})
+    # Preserve provider order but remove duplicate model IDs.
+    seen=set(); unique=[]
+    for item in result:
+        if item["id"] not in seen:
+            seen.add(item["id"]); unique.append(item)
+    if not unique:
+        raise RuntimeError("Provider /models response mein koi usable model ID nahi mila. FM_BASE_URL aur API key check karo.")
+    MODEL_CACHE.update(at=time.time(),items=unique)
+    return unique
 
 def model_keyboard(page=0):
     models=get_models()
@@ -98,7 +124,9 @@ def model_keyboard(page=0):
         row=[]
         for m in models[i:i+2]:
             label=("✦ "+m["name"])[:60]
-            row.append({"text":label,"callback_data":"m:"+m["id"][:55]})
+            token=hashlib.sha1(m["id"].encode("utf-8")).hexdigest()[:12]
+            MODEL_ID_MAP[token]=m["id"]
+            row.append({"text":label,"callback_data":"m:"+token})
         rows.append(row)
     nav=[]
     if page>0: nav.append({"text":"‹ Prev","callback_data":f"p:{page-1}"})
@@ -111,7 +139,9 @@ def model_prompt(chat):
     try:
         kb,total=model_keyboard(0)
         send(chat,f"✦ <b>NEBULA AI MODEL STUDIO</b>\n\nAvailable chat models: {total}\nChoose a model to start chatting.",parse_mode="HTML",reply_markup=kb)
-    except Exception as e: send(chat,"Model list load nahi hui: "+str(e)[:500])
+    except Exception as e:
+        log.exception("Model list failed")
+        send(chat,"⚠️ Models load nahi hue.\n\n"+str(e)[:700]+"\n\nRender Logs mein BOT logs aur FM_BASE_URL / FM_API_KEY check karo.")
 
 def typing_loop(chat,stop):
     while not stop.is_set():
@@ -209,14 +239,19 @@ def handle_message(m):
     if not text:
         send(chat,"Abhi text prompts supported hain. File/image understanding ko next bot update mein add kar sakte hain.")
         return
-    if text.startswith("/start"): start(chat)
-    elif text.startswith("/help"):
-        send(chat,"Commands:\n/start — Start bot\n/models — Choose model\n/new — Clear conversation\n/help — Help\n\nSingle file: code reply mein milega. Multi-file project: ZIP document ke roop mein milega.")
-    elif text.startswith("/models"): model_prompt(chat)
-    elif text.startswith("/new"):
+    command=text.split()[0].split("@",1)[0] if text.startswith("/") else ""
+    if command=="/start": start(chat)
+    elif command=="/help":
+        send(chat,"Commands:\n/start — Start bot\n/models — Choose model\n/new — Clear conversation\n/status — Bot/API status\n/help — Help\n\nSingle file: code reply mein milega. Multi-file project: ZIP document ke roop mein milega.")
+    elif command=="/status":
+        state=USER_STATE.get(chat,{})
+        send(chat,"✦ NEBULA STATUS\nBot: online\nAPI keys configured: "+str(len(keys()))+"\nAPI base: "+BASE+"\nSelected model: "+str(state.get("model") or "Not selected"))
+    elif command=="/models": model_prompt(chat)
+    elif command=="/new":
         USER_STATE[chat]={"model":USER_STATE.get(chat,{}).get("model"),"history":[]}
         send(chat,"New conversation started. Selected model retained.")
-    else: ask_ai(chat,text)
+    else:
+        threading.Thread(target=ask_ai,args=(chat,text),daemon=True).start()
 
 def handle_callback(c):
     data=c.get("data",""); chat=c["message"]["chat"]["id"]; msg=c["message"]["message_id"]
@@ -228,7 +263,12 @@ def handle_callback(c):
             edit(chat,msg,f"✦ NEBULA AI MODEL STUDIO\n\nAvailable chat models: {total}\nChoose a model.",reply_markup=kb)
         except Exception as e: send(chat,str(e)[:500])
     elif data.startswith("m:"):
-        model=data[2:]
+        token=data[2:]
+        model=MODEL_ID_MAP.get(token)
+        if not model:
+            answer_cb(c["id"],"Model list expired. Please open /models again.")
+            model_prompt(chat)
+            return
         USER_STATE.setdefault(chat,{"history":[]})["model"]=model
         USER_STATE[chat].setdefault("history",[])
         send(chat,f"✓ Model selected: {model}\n\nNow send your prompt. Use /new to clear chat.")
@@ -240,14 +280,29 @@ def main():
         log.info("BOT_TOKEN missing; Telegram bot is disabled.")
         return
     if not keys(): log.warning("No FM_API_KEY found. Bot will start but requests cannot run.")
-    log.info("Nebula Telegram bot starting; API base=%s",BASE)
+    log.info("Nebula Telegram bot starting; API base=%s; FM keys configured=%s",BASE,len(keys()))
+    try:
+        # Long polling cannot run while a webhook is configured for this bot.
+        deleted,_=request_json(TG+"/deleteWebhook?drop_pending_updates=false",timeout=20)
+        if not deleted.get("ok"):
+            log.warning("deleteWebhook response: %s",deleted.get("description","unknown"))
+        me,_=request_json(TG+"/getMe",timeout=20)
+        if not me.get("ok"):
+            raise RuntimeError(me.get("description","Telegram getMe failed"))
+        log.info("Telegram authenticated as @%s (id=%s)",me.get("result",{}).get("username"),me.get("result",{}).get("id"))
+    except Exception as e:
+        log.exception("Telegram startup verification failed: %s",e)
+        raise
     offset=None
     while True:
         try:
             params={"timeout":50}
             if offset is not None: params["offset"]=offset
             qs=urllib.parse.urlencode(params)
-            updates=tg("getUpdates") if False else request_json(TG+"/getUpdates?"+qs,timeout=60)[0].get("result",[])
+            response,_=request_json(TG+"/getUpdates?"+qs,timeout=65)
+            if not response.get("ok"):
+                raise RuntimeError(response.get("description","Telegram getUpdates failed"))
+            updates=response.get("result",[])
             for u in updates:
                 offset=u["update_id"]+1
                 try:
