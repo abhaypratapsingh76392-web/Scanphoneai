@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: freemodel-studio
+    runtime: docker
+    plan: free
+    envVars:
+      - key: FM_API_KEY
+        sync: false
+      - key: FM_API_KEY_2
+        sync: false
+      - key: FM_API_KEY_3
+        sync: false
+      - key: FM_BASE_URL
+        value: https://freemodel.in/v1
+      - key: APP_PASSWORD
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
