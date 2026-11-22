@@ -126,25 +126,40 @@ app.use('/api', async (req, res) => {
   });
 });
 
+// Safe runtime diagnostics: never expose the bot token or API keys.
+app.get('/bot-status', (req, res) => {
+  res.json({
+    website: 'online',
+    botTokenConfigured: Boolean(process.env.BOT_TOKEN && process.env.BOT_TOKEN.trim()),
+    botProcessStarted: Boolean(global.__nebulaBotProcess && !global.__nebulaBotProcess.killed),
+    pythonCommand: process.env.PYTHON_BIN || 'python3'
+  });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 function startTelegramBot() {
   if (!process.env.BOT_TOKEN || !process.env.BOT_TOKEN.trim()) {
-    console.log('BOT_TOKEN not set; Telegram bot disabled.');
+    console.error('[NEBULA BOT] DISABLED: BOT_TOKEN is missing in Render Environment.');
+    global.__nebulaBotProcess = null;
     return;
   }
   const py = process.env.PYTHON_BIN || 'python3';
+  console.log(`[NEBULA BOT] Starting bot.py with ${py} ...`);
   const child = spawn(py, ['-u', path.join(__dirname, 'bot.py')], {
     cwd: __dirname, env: process.env, stdio: ['ignore', 'inherit', 'inherit']
   });
-  child.on('error', err => console.error('Telegram bot failed to start:', err.message));
+  global.__nebulaBotProcess = child;
+  child.on('spawn', () => console.log('[NEBULA BOT] Python process spawned; waiting for Telegram authentication log.'));
+  child.on('error', err => console.error('[NEBULA BOT] PROCESS ERROR:', err.message));
   child.on('exit', (code, signal) => {
-    console.error(`Telegram bot exited (code=${code}, signal=${signal}); restarting in 5s`);
-    setTimeout(startTelegramBot, 5000).unref();
+    console.error(`[NEBULA BOT] Process exited (code=${code}, signal=${signal}). Restarting in 8 seconds.`);
+    global.__nebulaBotProcess = null;
+    setTimeout(startTelegramBot, 8000).unref();
   });
 }
 
 app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
-  console.log('Nebula AI website running');
-  console.log('Telegram bot token configured:', Boolean(process.env.BOT_TOKEN && process.env.BOT_TOKEN.trim()));
+  console.log('[NEBULA WEB] Website listening on port', process.env.PORT || 3000);
+  console.log('[NEBULA BOT] BOT_TOKEN configured:', Boolean(process.env.BOT_TOKEN && process.env.BOT_TOKEN.trim()));
   startTelegramBot();
 });

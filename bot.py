@@ -280,7 +280,7 @@ def main():
         log.info("BOT_TOKEN missing; Telegram bot is disabled.")
         return
     if not keys(): log.warning("No FM_API_KEY found. Bot will start but requests cannot run.")
-    log.info("Nebula Telegram bot starting; API base=%s; FM keys configured=%s",BASE,len(keys()))
+    log.info("[NEBULA BOT] Starting Telegram polling; API base=%s; FM keys configured=%s",BASE,len(keys()))
     try:
         # Long polling cannot run while a webhook is configured for this bot.
         deleted,_=request_json(TG+"/deleteWebhook?drop_pending_updates=false",timeout=20)
@@ -289,9 +289,10 @@ def main():
         me,_=request_json(TG+"/getMe",timeout=20)
         if not me.get("ok"):
             raise RuntimeError(me.get("description","Telegram getMe failed"))
-        log.info("Telegram authenticated as @%s (id=%s)",me.get("result",{}).get("username"),me.get("result",{}).get("id"))
+        log.info("[NEBULA BOT] Telegram authenticated as @%s (id=%s)",me.get("result",{}).get("username"),me.get("result",{}).get("id"))
+        log.info("[NEBULA BOT] Polling started. Send /start to the bot in Telegram.")
     except Exception as e:
-        log.exception("Telegram startup verification failed: %s",e)
+        log.exception("[NEBULA BOT] Telegram startup verification failed: %s",e)
         raise
     offset=None
     while True:
